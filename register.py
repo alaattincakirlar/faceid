@@ -1,47 +1,83 @@
 import cv2
-import os
 import face_recognition
+import os
+import pickle
+import config
 
-camera = cv2.VideoCapture(0)
+if not os.path.exists(config.DATA_DIR):
+    os.makedirs(config.DATA_DIR)    
 
-while True:
-    ret, frame = camera.read()
-    frameOriginal = frame.copy()
-    if not ret:
-        break
+def updateData(name, values):
+    data = {}
+    
+    if os.path.exists(config.DB_PATH):
+        try:
+            with open("faceData.pickle", "rb") as f:
+                data = pickle.load(f)
+        except:
+            return False, 'File reading error.'
+        
+    if name in data:
+        return 'Already exists.'
 
-    rgb_reducedFrame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (0, 0), fx=0.25, fy=0.25)
-    faces = face_recognition.face_locations(rgb_reducedFrame)
+    try:
+        data[name] = values
+        with open(config.DB_PATH, "wb") as f:
+            pickle.dump(data, f)
+        return True, name + ' added.'
+    except:
+        return False, 'File writing error.'
+    
+def main():
+    camera = cv2.VideoCapture(config.CAMERA_ID)
 
-    if len(faces) == 0:
-        status = 'There is no face to detect.'
-        color = (0, 0, 255)
+    if not camera.isOpened():
+        return False, 'Camera error.'
 
-    elif len(faces) > 1:
-        status = 'There are too many faces.'
-        color = (0, 0, 255)
+    while True:
+        ret, frame = camera.read()
 
-    else:
-        status = 'Press S to register this face.'
-        color = (0, 255, 0)
+        if not ret:
+            break
+        
+        originalFrame = frame.copy()
+        reducedFrame = cv2.resize(frame, (0,0), fx=config.SCALE_FACTOR, fy=config.SCALE_FACTOR)
+        rgb_frame = cv2.cvtColor(reducedFrame, cv2.COLOR_BGR2RGB)
+        
+        faceLocation = face_recognition.face_locations(rgb_frame, model=config.MODEL)
+        
+        if len(faceLocation) == 1:
+            text = "Press 's' to register."
+            color = config.COLOR_GREEN
 
+        elif len(faceLocation) == 0:
+            text = "There is no face to register."
+            color = config.COLOR_RED
 
-    cv2.putText(frame, status, (50, 50), cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 1)
-    cv2.imshow('Register Screen', frame)
-    key = cv2.waitKey(1) & 0xFF
+        elif len(faceLocation) > 1:
+            text = "There are too many faces."
+            color = config.COLOR_RED
+        
+        cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        cv2.imshow("Register Mode", frame)
 
-    if key == ord('q'):
-        break
+        key = cv2.waitKey(1) & 0xFF
 
-    elif key == ord('s') and len(faces) == 1:
-        name = str(input('Name to register: '))
+        if key == ord('q'):
+            break
 
-        if not os.path.exists('data'):
-                os.makedirs('data')
+        elif key == ord('s') and len(faceLocation) == 1:
+            data = face_recognition.face_encodings(rgb_frame, faceLocation)
+            
+            if len(data) == 1:
+                name = input("Name to register: ").strip().upper()
 
-        cv2.imwrite('data/' + name + '.jpg', frameOriginal)
-        print("Face registered as:", name)
-        break
+                if name:
+                    updateData(name, data[0])
+                    break
+            
+    camera.release()
+    cv2.destroyAllWindows()
 
-camera.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
